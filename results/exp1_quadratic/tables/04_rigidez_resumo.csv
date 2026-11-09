@@ -1,0 +1,9 @@
+painel,metodo,kappa,h,mu_lento,mu_rapido,passos_teoricos_ate_tol_1e-6,observacao
+isolado,EF,100,0.5,0.5,,20,modo lento isolado
+isolado,EF,100,1.0,0.0,,1,modo lento isolado
+isolado,EF,100,1.8,-0.8,,62,modo lento isolado
+restrito,EF,10,0.18,0.8199999999999998,-0.7999999999999998,70,passo imposto pelo modo rápido
+restrito,EF,100,0.018,0.982,-0.8,761,passo imposto pelo modo rápido
+restrito,EF,1000,0.0017999999999999997,0.9982000000000001,-0.8,7669,passo imposto pelo modo rápido
+restrito,EF,10000,0.00017999999999999998,0.99982,-0.8000000000000003,76746,passo imposto pelo modo rápido
+restrito,EB,100,1.0,0.5,0.0099009900990099,20,referência implícita: sem restrição superior de estabilidade
