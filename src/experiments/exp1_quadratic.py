@@ -18,7 +18,6 @@ Requer src.problems.quadratic e src.methods.euler já existentes no projeto.
 """
 
 import argparse
-import csv
 from pathlib import Path
 from time import perf_counter
 
@@ -35,6 +34,7 @@ from src.problems.quadratic import (
     quadratic_value,
 )
 from src.methods.euler import forward_euler, backward_euler
+from src.output import csv_write, png
 
 
 OUT = Path(__file__).resolve().parents[2] / "results" / "exp1_quadratic"
@@ -43,34 +43,15 @@ TABLES = OUT / "tables"
 LOGS = OUT / "logs"
 AUX_FIGURES = FIGURES / "auxiliares"
 
-# Arquivos da versão antiga de seis análises. Serão arquivados,
-# sem exclusão de resultados anteriores, após uma execução bem-sucedida.
-LEGACY_FILES = (
-    FIGURES / "02_fatores_espectrais.png",
-    FIGURES / "03_geometria.png",
-    FIGURES / "04_modos_temporais.png",
-    FIGURES / "05_erro_temporal.png",
-    FIGURES / "06_rigidez_custo.png",
-    TABLES / "05_erro_temporal.csv",
-    TABLES / "06_rigidez_custo.csv",
-)
-
-
 def save_csv(name, rows):
-    if not rows:
-        return
-    TABLES.mkdir(parents=True, exist_ok=True)
-    with (TABLES / name).open("w", encoding="utf-8", newline="") as fp:
-        writer = csv.DictWriter(fp, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
+    """Adaptador de saída que preserva os nomes históricos dos CSVs."""
+    csv_write(TABLES / name, rows)
 
 
 def save_plot(fig, name, auxiliary=False):
+    """Adaptador de saída: a figura permanece PNG, 300 dpi."""
     folder = AUX_FIGURES if auxiliary else FIGURES
-    folder.mkdir(parents=True, exist_ok=True)
-    fig.savefig(folder / f"{name}.png", dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    png(fig, folder / f"{name}.png")
 
 
 def setup(kappa):
@@ -168,25 +149,36 @@ def experiment_stability():
 
 
 def experiment_geometry():
-    """Análise 2: mesma condição inicial, passo e horizonte para EF e EB.
+    """Análise 2: compara trajetórias EF/EB com o fluxo contínuo exato.
 
-    As retas pontilhadas identificam os subespaços invariantes associados
-    a lambda_min (modo lento) e lambda_max (modo rápido). O sinal de cada
-    autovetor é arbitrário: o modo corresponde à reta, não a um sentido.
+    Mesmo x0, mesmo passo h e horizonte T nos dois painéis. As direções
+    espectrais são retas invariantes, não vetores com orientação preferida.
     """
     A, eigenvalues, V, grad, hess = setup(100)
     v_slow, v_fast = V[:, 0], V[:, -1]
     x0 = v_slow + v_fast
-    h, n = 0.018, 36
+    h, n = 0.018, 200
+    T = n * h
 
-    grid = np.linspace(-1.6, 1.6, 300)
+    grid = np.linspace(-1.6, 0.6, 300)
     X, Y = np.meshgrid(grid, grid)
     Z = 0.5 * (A[0, 0] * X**2 + 2 * A[0, 1] * X * Y + A[1, 1] * Y**2)
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.2, 5.8), sharex=True, sharey=True)
-    slow_color = "#07847b"  # diferente da trajetória azul
+    t_ref = np.linspace(0.0, T, 500)
+    flow_ref = exact_flow(A, x0, t_ref)
+    xT = exact_flow(A, x0, [T])[0]
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=(13, 7.5), sharex=True, sharey=True
+    )
+    slow_color = "#07847b"
     fast_color = "#ca6a18"
+    disc_color = "#33ba18"
+    cont_color = "#bb2a34"
+
     handles = []
+    rows = []
+    final_errors = {}
 
     for idx, (ax, method, title) in enumerate(zip(
         axes, ("EF", "EB"),
@@ -197,53 +189,112 @@ def experiment_geometry():
         else:
             traj, _ = backward_euler(grad, hess, x0, h, n)
         _fixed_length(traj, n, f"Geometria {method}")
+        final_errors[method] = float(np.linalg.norm(traj[-1] - xT))
 
-        ax.contour(X, Y, Z, levels=np.geomspace(0.03, 100, 11),
-                   colors="0.68", linewidths=0.75, alpha=0.72, zorder=1)
+        ax.contour(
+            X, Y, Z, levels=np.geomspace(0.3, 100, 11),
+            colors="0.68", linewidths=0.75, alpha=0.72, zorder=1,
+        )
 
-        # Direções espectrais: as retas passam pelo minimizador x*=0.
         for vector, color, label in (
             (v_slow, slow_color, rf"Modo lento ($\lambda={eigenvalues[0]:g}$)"),
             (v_fast, fast_color, rf"Modo rápido ($\lambda={eigenvalues[-1]:g}$)"),
         ):
             endpoints = 1.85 * np.vstack((-vector, vector))
-            line, = ax.plot(endpoints[:, 0], endpoints[:, 1],
-                            color=color, linestyle=(0, (4, 3)), linewidth=1.65,
-                            alpha=0.9, zorder=2, label=label)
+            line, = ax.plot(
+                endpoints[:, 0], endpoints[:, 1],
+                color=color, linestyle=(0, (4, 3)), linewidth=1.2,
+                alpha=0.9, zorder=2, label=label,
+            )
             if idx == 0:
                 handles.append(line)
 
-        path, = ax.plot(traj[:, 0], traj[:, 1], "o-", color="#2166ad",
-                        markersize=3.0, linewidth=1.55, zorder=4,
-                        label="Trajetória numérica")
-        initial, = ax.plot(x0[0], x0[1], "*", color="black",
-                           markersize=11, zorder=6, label="Condição inicial")
-        minimum, = ax.plot(0, 0, "x", color="black", markeredgewidth=1.7,
-                           markersize=8.5, zorder=6, label="Mínimo")
+        continuous, = ax.plot(
+            flow_ref[:, 0], flow_ref[:, 1],
+            color=cont_color, linewidth=1.65, linestyle="-",
+            alpha=0.95, zorder=4, label="Fluxo contínuo exato",
+        )
+        discrete, = ax.plot(
+            traj[:, 0], traj[:, 1],
+            "o-", color=disc_color, markersize=2.6, linewidth=1.25,
+            zorder=3, label="Trajetória numérica",
+        )
+        initial, = ax.plot(
+            x0[0], x0[1], "*", color="black",
+            markersize=8, zorder=6, label="Condição inicial",
+        )
+        minimum, = ax.plot(
+            0, 0, "x", color="black", markeredgewidth=1.7,
+            markersize=8.5, zorder=6, label="Mínimo",
+        )
         if idx == 0:
-            handles.extend((path, initial, minimum))
+            handles.extend((continuous, discrete, initial, minimum))
 
         ax.set_title(title, pad=10, fontsize=11)
-        ax.set(xlim=(-1.6, 1.6), ylim=(-1.6, 1.6))
+        ax.set(xlim=(-1.6, 0.6), ylim=(-1.6, 0.6))
         ax.set_aspect("equal", adjustable="box")
         ax.grid(alpha=0.10, linewidth=0.7)
         ax.spines[["top", "right"]].set_visible(False)
 
-    fig.suptitle(r"Geometria das trajetórias e modos espectrais ($\kappa=100$)",
-                 fontsize=14, y=0.98)
-    fig.text(0.5, 0.91,
-             r"Mesmo $x_0=v_{\min}+v_{\max}$, $h=0{,}018$, "
-             r"$N=36$ e $T=0{,}648$",
-             ha="center", fontsize=10)
-    fig.supxlabel(r"Coordenada $x_1$", fontsize=11, y=0.13)
-    fig.supylabel(r"Coordenada $x_2$", fontsize=11, x=0.02)
-    fig.legend(handles, [line.get_label() for line in handles],
-               loc="lower center", bbox_to_anchor=(0.5, 0.015),
-               ncol=3, fontsize=9, frameon=False,
-               columnspacing=1.7, handlelength=2.8)
-    fig.subplots_adjust(left=0.09, right=0.985, bottom=0.23,
-                        top=0.82, wspace=0.16)
+        for k, point in enumerate(traj):
+            rows.append({
+                "metodo": method,
+                "tipo": "discreto",
+                "iteracao": int(k),
+                "tempo": float(k * h),
+                "x1": float(point[0]),
+                "x2": float(point[1]),
+            })
+
+    for j, point in enumerate(flow_ref):
+        rows.append({
+            "metodo": "CONTINUO",
+            "tipo": "continuo_exato",
+            "iteracao": int(j),
+            "tempo": float(t_ref[j]),
+            "x1": float(point[0]),
+            "x2": float(point[1]),
+        })
+
+    fig.suptitle(
+        r"Geometria das trajetórias e modos espectrais ($\kappa=100$)",
+        fontsize=15, y=0.975,
+    )
+
+    fig.text(
+        0.5, 0.928,
+        r"Mesmo $x_0=v_{\min}+v_{\max}$, $h=0{,}018$, "
+        rf"$N={n}$, $T={T:.3f}$; referência: $x(t)=e^{{-At}}x_0$",
+        ha="center", va="center", fontsize=10.6,
+    )
+
+    fig.text(
+        0.5, 0.892,
+        rf"Erro final em $T$: EF = {final_errors['EF']:.3e}   |   "
+        rf"EB = {final_errors['EB']:.3e}",
+        ha="center", va="center", fontsize=9.8, color="0.35",
+    )
+
+    fig.supxlabel(r"Coordenada $x_1$", fontsize=11, y=0.135)
+    fig.supylabel(r"Coordenada $x_2$", fontsize=11, x=0.03)
+
+    fig.legend(
+        handles, [line.get_label() for line in handles],
+        loc="lower center", bbox_to_anchor=(0.5, 0.03),
+        ncol=3, fontsize=9.1, frameon=False,
+        columnspacing=1.5, handlelength=2.5,
+    )
+
+    fig.subplots_adjust(
+        left=0.09,
+        right=0.93,
+        bottom=0.22,
+        top=0.79,
+        wspace=0.18,
+    )
     save_plot(fig, "02_geometria")
+    save_csv("02_geometria.csv", rows)
+    return final_errors
 
 
 def experiment_accuracy():
@@ -446,7 +497,7 @@ def experiment_stiffness():
     trajectory_rows = []
 
     k_left = np.arange(13)
-    for h, color in ((0.5, "#168a70"), (1.0, "#1f77b4"), (1.8, "#9a50c7")):
+    for h, color in ((0.5,"#1f77b4" ), (1.0,"#33ba18"), (1.8, "#168a70" )):
         # Mesmo x0 do painel (b). Aqui evoluímos somente sua projeção
         # no modo lento: o passo NÃO é aplicado ao sistema completo.
         z = np.abs(z0_lento * (1.0 - h * vals_ref[0]) ** k_left)
@@ -474,8 +525,9 @@ def experiment_stiffness():
 
     # Calcula apenas a projeção espectral, cuja recorrência é exata
     # para EF em uma quadrática SPD; não é uma aproximação adicional.
+
     k_right = np.arange(2001)
-    colors = ("#168a70", "#1f77b4", "#d18b20", "#9a50c7")
+    colors = ("#33ba18", "#1f77b4", "#168a70", "#bb2a34")
     for kappa, color in zip(kappas, colors):
         h = 1.8 / kappa
         mu_slow = 1.0 - h
@@ -485,19 +537,51 @@ def experiment_stiffness():
         if not np.isclose(abs(z0_slow_kappa), 1.0, atol=1e-9):
             raise RuntimeError("A família quadrática mudou as direções espectrais.")
         z = np.abs(z0_slow_kappa * mu_slow ** k_right)
-        ax_b.plot(k_right, z, color=color, linewidth=2,
-                  label=rf"EF: $\kappa={kappa}$, $h={h:.2g}$")
-        trajectory_rows.extend({
-            "painel": "modo_lento_restrito", "metodo": "EF",
-            "kappa": kappa, "h": h, "iteracao": int(k),
-            "componente_lenta_abs": float(value)
-        } for k, value in zip(k_right, z))
+
+        # Seleção de pontos apenas para visualização.
+        # Mantém mais pontos na região de decaimento rápido.
+        limite_inicial = min(2000, int(np.ceil(6.0 / h)))
+        passo_marcacao = 25 # min(20, max(1, int(np.ceil(0.3 / h))))
+
+        indices = np.unique(np.concatenate([
+            np.arange(0, limite_inicial + 1, passo_marcacao),
+            np.linspace(limite_inicial, 2000, 25, dtype=int),
+            [2000],
+        ]))
+
+        # Linha completa + marcadores espaçados, para não poluir o gráfico.
+        limite_inicial = min(2000, int(np.ceil(6.0 / h)))
+        passo_marcacao = min(80, max(1, int(np.ceil(0.3 / h))))
+
+        indices = np.unique(np.concatenate([
+            np.arange(0, limite_inicial + 1, passo_marcacao),
+            np.linspace(limite_inicial, 2000, 25, dtype=int),
+            [2000],
+        ]))
+
+        ax_b.plot(
+            k_right,
+            z,
+            "o-",
+            color=color,
+            linewidth=1,
+            markersize=2.0,
+            markevery=indices,
+            label=rf"EF: $\kappa={kappa}$, $h={h:.2g}$",
+        )
 
     # EB: fator do modo lento 1/(1+h)=1/2, independente de kappa.
     k_eb = np.arange(21)
     z_eb = np.abs(z0_lento * 0.5 ** k_eb)
-    ax_b.plot(k_eb, z_eb, "ks--", markersize=3.4, linewidth=1.5,
-              label="EB: $h=1$ (referência)")
+    ax_b.plot(
+        k_eb,
+        z_eb,
+        "o--",
+        color="black",
+        linewidth=1,
+        markersize=2.0,
+        label="EB: $h=1$ (referência)",
+    )
     trajectory_rows.extend({
         "painel": "modo_lento_restrito", "metodo": "EB",
         "kappa": 100, "h": 1.0, "iteracao": int(k),
@@ -515,10 +599,10 @@ def experiment_stiffness():
     ax_b.set_ylim(-0.035, 1.07)
     ax_b.grid(alpha=0.18)
     ax_b.legend(loc="upper right", fontsize=8.5)
-    ax_b.text(0.03, 0.08,
-              r"EF: estabilidade do modo rápido exige $h<2/\kappa$",
-              transform=ax_b.transAxes, fontsize=9,
-              bbox=dict(facecolor="white", edgecolor="0.85", alpha=0.92))
+    # ax_b.text(0.03, 0.08,
+    #          r"EF: estabilidade do modo rápido exige $h<2/\kappa$",
+    #          transform=ax_b.transAxes, fontsize=9,
+    #          bbox=dict(facecolor="white", edgecolor="0.85", alpha=0.92))
 
     fig.suptitle("Rigidez: o modo rápido restringe o avanço do modo lento",
                  fontsize=13.5, y=0.98)
@@ -584,24 +668,6 @@ def experiment_modes():
     save_plot(fig, "aux_modos_temporais", auxiliary=True)
 
 
-def _archive_old_outputs():
-    """Retira resultados legados da pasta principal sem apagá-los."""
-    archive_root = OUT / "arquivo_versao_6_analises"
-    for path in LEGACY_FILES:
-        if not path.exists():
-            continue
-        target = archive_root / path.parent.name / path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        # Nunca sobrescreve arquivos antigos que já estejam no arquivo.
-        if target.exists():
-            stem, suffix = path.stem, path.suffix
-            counter = 2
-            while (target.parent / f"{stem}_{counter}{suffix}").exists():
-                counter += 1
-            target = target.parent / f"{stem}_{counter}{suffix}"
-        path.replace(target)
-
-
 def main(include_auxiliary=False):
     for folder in (FIGURES, TABLES, LOGS):
         folder.mkdir(parents=True, exist_ok=True)
@@ -626,7 +692,6 @@ def main(include_auxiliary=False):
     rows = experiment_stiffness()
 
     # Retira os arquivos antigos da pasta principal sem excluir resultados.
-    _archive_old_outputs()
 
     if include_auxiliary:
         print("[Auxiliar] Fatores de amplificação")
@@ -644,7 +709,7 @@ def main(include_auxiliary=False):
         "Análise 1: kappa=100, x0=autovetor rápido, N=20.",
         "Análise 1: h=0.005, 0.015, 0.020, 0.021; sem parada antecipada e sem zoom.",
         "Análise 2: dois painéis com mesmo x0=v_min+v_max, h=0.018, N=36, T=0.648.",
-        "Análise 2: eixos espectrais lento/rápido destacados nas curvas de nível.",
+        "Análise 2: eixos espectrais e fluxo contínuo exato x(t)=exp(-At)x0; CSV 02_geometria.csv.",
         "Análise 3: kappa=100, T=0.05 fixo; N variável; erro em x(T).",
         "Análise 3: eixo inferior h decrescente; superior N=T/h crescente; referência E_ref(h)=C*h, passando por (0,0) em escala linear.",
         f"Inclinação observada (EF): {slopes['EF']:.5f}",
@@ -654,7 +719,7 @@ def main(include_auxiliary=False):
         "Análise 4(a): integra apenas a coordenada modal lenta dessa condição inicial; passos grandes não são aplicados ao sistema completo.",
         "Análise 4(b): modo lento sob restrição do modo rápido; EF h=1.8/kappa; EB h=1.",
         "CSV 04_rigidez_iteracoes preserva contagens e tempos; 04_rigidez_trajetorias contém os dados das curvas.",
-        "Saídas legadas são arquivadas sem exclusão de resultados.",
+        "Resultados são gravados em results/exp1_quadratic, sem arquivar versões anteriores.",
         "Tempos ilustrativos: mediana de 3 repetições no mesmo ambiente.",
         "Não tratar operações de EF e EB como custos unitários equivalentes.",
         "Auxiliares opcionais (fora das quatro figuras principais): "

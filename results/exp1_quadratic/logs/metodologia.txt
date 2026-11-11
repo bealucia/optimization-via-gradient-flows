@@ -7,7 +7,7 @@ Figuras principais: 01_estabilidade, 02_geometria,
 Análise 1: kappa=100, x0=autovetor rápido, N=20.
 Análise 1: h=0.005, 0.015, 0.020, 0.021; sem parada antecipada e sem zoom.
 Análise 2: dois painéis com mesmo x0=v_min+v_max, h=0.018, N=36, T=0.648.
-Análise 2: eixos espectrais lento/rápido destacados nas curvas de nível.
+Análise 2: eixos espectrais e fluxo contínuo exato x(t)=exp(-At)x0; CSV 02_geometria.csv.
 Análise 3: kappa=100, T=0.05 fixo; N variável; erro em x(T).
 Análise 3: eixo inferior h decrescente; superior N=T/h crescente; referência E_ref(h)=C*h, passando por (0,0) em escala linear.
 Inclinação observada (EF): 0.96568
@@ -17,7 +17,7 @@ Análise 4: mesma condição inicial física x0=v_min+v_max para ambos os painé
 Análise 4(a): integra apenas a coordenada modal lenta dessa condição inicial; passos grandes não são aplicados ao sistema completo.
 Análise 4(b): modo lento sob restrição do modo rápido; EF h=1.8/kappa; EB h=1.
 CSV 04_rigidez_iteracoes preserva contagens e tempos; 04_rigidez_trajetorias contém os dados das curvas.
-Saídas legadas são arquivadas sem exclusão de resultados.
+Resultados são gravados em results/exp1_quadratic, sem arquivar versões anteriores.
 Tempos ilustrativos: mediana de 3 repetições no mesmo ambiente.
 Não tratar operações de EF e EB como custos unitários equivalentes.
 Auxiliares opcionais (fora das quatro figuras principais): não geradas

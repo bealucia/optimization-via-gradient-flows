@@ -1,8 +1,9 @@
-"""Módulo 2: dissipação, contração e robustez em função não quadrática.
+"""Módulo 2: duas investigações não quadráticas.
 
-Um único programa com ensaios separados: convergencia, dissipacao, robustez;
-precisao temporal é diagnóstico auxiliar executado com --analise precisao/todos.
-Comparações por iteração não são erros no mesmo instante temporal.
+1. Problema separável: convergência, contração e dissipação.
+2. Problema acoplado: trajetórias sob variação de h e sensibilidade inicial.
+Análises antigas de robustez, precisão e resíduos permanecem auxiliares.
+Comparações por iteração e erro temporal no mesmo t respondem perguntas distintas.
 """
 import argparse
 import numpy as np
@@ -11,12 +12,14 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from src.problems.strongly_convex import StronglyConvex
+from src.problems.coupled_nonquadratic import CoupledNonQuadratic
 from src.methods.euler import forward_euler, backward_euler
 from src.output import folders, png, csv_write, json_write
 from scipy.integrate import solve_ivp
 
 
-def experiment_convergence(kappas=(10, 100), tol=1e-6, max_steps=12000):
+def experiment_convergence(kappas=(10, 100), tol=1e-6, max_steps=12000,
+                           mostrar_limite_auxiliar=True):
     out = folders('exp2_nonquadratic')
     x0 = np.array([1., 1.])
     rows, traces = [], []
@@ -65,9 +68,9 @@ def experiment_convergence(kappas=(10, 100), tol=1e-6, max_steps=12000):
     axes[0,0].set_ylabel(r'Norma do gradiente $\|\nabla f(x_k)\|_2$')
     fig.suptitle('Função não quadrática: convergência sob passos distintos')
     fig.tight_layout()
-    png(fig, out['figures'] / '01_convergencia_nao_quadratica.png')
+    png(fig, out['figures'] / '01_separavel_convergencia.png')
 
-    if demo_traj is not None:
+    if demo_traj is not None and mostrar_limite_auxiliar:
         # Contração teórica válida para todo passo proximal EXATO de uma função
         # m-fortemente convexa, aqui comparada com EB Newton tolerante.
         h = 1.
@@ -84,14 +87,14 @@ def experiment_convergence(kappas=(10, 100), tol=1e-6, max_steps=12000):
         ax.grid(which='both', alpha=.24)
         ax.legend()
         fig.tight_layout()
-        png(fig, out['figures'] / '02_limite_contracao.png')
+        png(fig, out['figures'] / 'auxiliares/limite_contracao.png')
         # Alertar, e não afirmar teorema numérico, se erro de solver interferir.
         if np.any(observed > bound + 1e-8):
             print('Aviso: estimativa de contração não satisfeita dentro da margem numérica.')
 
-    csv_write(out['tables'] / '01_resumo_convergencia.csv', rows)
-    csv_write(out['tables'] / '02_trajetorias_metrica.csv', traces)
-    json_write(out['logs'] / 'config.json', dict(kappas=list(kappas), x0=x0.tolist(),
+    csv_write(out['tables'] / '01_separavel_convergencia_resumo.csv', rows)
+    csv_write(out['tables'] / '01_separavel_convergencia_trajetorias.csv', traces)
+    json_write(out['logs'] / '01_separavel_convergencia_config.json', dict(kappas=list(kappas), x0=x0.tolist(),
                tol_grad=tol, max_steps=max_steps, funcao='strongly_convex',
                epsilon=.25, m=.75,
                observacao='Compara otimização por iteração; horizontes temporais diferem.' ))
@@ -194,10 +197,10 @@ def experiment_dissipation(*, piloto=False):
     ax.grid(which='both', alpha=.20)
     ax.legend(fontsize=8.7, ncol=2)
     fig.tight_layout()
-    png(fig, out['figures']/'03_dissipacao_passos.png')
-    csv_write(out['tables']/'03_dissipacao_resumo.csv', rows)
-    csv_write(out['tables']/'03_dissipacao_trajetorias.csv', histories)
-    json_write(out['logs']/'03_dissipacao_config.json', {
+    png(fig, out['figures']/'02_separavel_dissipacao.png')
+    csv_write(out['tables']/'02_separavel_dissipacao_resumo.csv', rows)
+    csv_write(out['tables']/'02_separavel_dissipacao_trajetorias.csv', histories)
+    json_write(out['logs']/'02_separavel_dissipacao_config.json', {
         'problema':'StronglyConvex', 'kappa':100, 'm':problem.m, 'L':L,
         'x0':x0.tolist(), 'passos_fixos':n_steps,
         'estrategias':[{'metodo':m, 'h':h, 'rotulo':lab} for m,h,lab in variations],
@@ -233,8 +236,8 @@ def experiment_robustness(*, piloto=False):
                 row['max_steps'] = max_steps
                 row['x0'] = repr(x0.tolist())
                 rows.append(row)
-    csv_write(out['tables']/'04_robustez_grade.csv', rows)
-    json_write(out['logs']/'04_robustez_config.json', {
+    csv_write(out['tables']/'auxiliares/robustez_grade.csv', rows)
+    json_write(out['logs']/'auxiliares/robustez_config.json', {
         'kappas':list(kappas), 'condicoes_iniciais':{k:v.tolist() for k,v in initial.items()},
         'tol_grad':tol, 'max_steps':max_steps, 'solver_EB':{'inner_tol':1e-12,
         'max_newton':15}, 'nota':'Falha e Max Steps são categorias diferentes de Converged.'})
@@ -262,7 +265,7 @@ def experiment_robustness(*, piloto=False):
             ax.text(j,i,text,ha='center',va='center',fontsize=8,
                     color='black' if values[i,j]<2 else 'white')
     fig.tight_layout()
-    png(fig, out['figures']/'04_robustez_status.png')
+    png(fig, out['figures']/'auxiliares/robustez_status.png')
     return rows
 
 
@@ -324,9 +327,9 @@ def experiment_accuracy(*, piloto=False):
     ax.grid(which='both',alpha=.20)
     ax.legend(fontsize=9)
     fig.tight_layout()
-    png(fig,out['figures']/'05_erro_temporal.png')
-    csv_write(out['tables']/'05_erro_temporal.csv',rows)
-    json_write(out['logs']/'05_precisao_config.json',{
+    png(fig,out['figures']/'auxiliares/precisao_temporal.png')
+    csv_write(out['tables']/'auxiliares/precisao_temporal.csv',rows)
+    json_write(out['logs']/'auxiliares/precisao_config.json',{
         'kappa':100, 'x0':x0.tolist(), 'T':T, 'Ns':list(Ns),
         'referencia':'scipy.integrate.solve_ivp DOP853',
         'rtol':2e-13,'atol':2e-15,'xT_referencia':target.tolist(),
@@ -440,15 +443,15 @@ def experiment_trajectory_robustness(*, piloto=False, root=None):
                 title='Sensibilidade linearizada')
     axes[2].grid(alpha=.18); axes[2].legend(fontsize=7.8)
     fig.tight_layout()
-    png(fig,out['figures']/'06_trajetorias_perturbacoes.png')
-    csv_write(out['tables']/'06_trajetorias_perturbacoes.csv',rows)
-    csv_write(out['tables']/'06_equacao_variacional.csv',[
+    png(fig,out['figures']/'auxiliares/trajetorias_perturbacoes.png')
+    csv_write(out['tables']/'auxiliares/trajetorias_perturbacoes.csv',rows)
+    csv_write(out['tables']/'auxiliares/equacao_variacional.csv',[
         dict(t=float(t[k]), xi_1=float(xi[k,0]),xi_2=float(xi[k,1]),
              diferenca_finita_1=float(derivative_fd[k,0]),
              diferenca_finita_2=float(derivative_fd[k,1]),
              discrepancia=float(variational_mismatch[k]))
         for k in range(N+1)])
-    json_write(out['logs']/'06_config.json',dict(
+    json_write(out['logs']/'auxiliares/perturbacoes_config.json',dict(
         kappa=problem.kappa,m=problem.m,L=problem.L,
         x0=x0.tolist(),x0_perturbado=x0_other.tolist(),
         epsilon_diferenca_finita=epsilon,direcao=direction.tolist(),
@@ -498,7 +501,7 @@ def experiment_implicit_residual(*, piloto=False, root=None):
                          residuo_referencia=rref,
                          limite_comparacao_duas_aproximacoes=validated_bound,
                          limite_respeitado=True))
-    csv_write(out['tables']/'07_residuo_implicito.csv',rows)
+    csv_write(out['tables']/'auxiliares/residuo_implicito.csv',rows)
     data=[r for r in rows if r['candidato'].startswith('perturbacao_')]
     fig,ax=plt.subplots(figsize=(7.5,4.8))
     ax.loglog([r['residuo_equacao_implicita'] for r in data],
@@ -513,34 +516,314 @@ def experiment_implicit_residual(*, piloto=False, root=None):
            title='Robustez do passo EB à resolução interna')
     ax.grid(alpha=.2,which='both');ax.legend(fontsize=9)
     fig.tight_layout()
-    png(fig,out['figures']/'07_residuo_implicito.png')
-    json_write(out['logs']/'07_config.json',dict(kappa=p.kappa,m=p.m,h=h,
+    png(fig,out['figures']/'auxiliares/residuo_implicito.png')
+    json_write(out['logs']/'auxiliares/residuo_implicito_config.json',dict(kappa=p.kappa,m=p.m,h=h,
         x0=x0.tolist(),referencia=yref.tolist(),residuo_referencia=rref,
         nota='Referência é solução aproximada; critério validado usa soma dos resíduos.'))
     return rows
 
 
-def main(analise='principais', piloto=False):
-    """Ensaios independentes em um único programa do Módulo 2.
 
-    'principais': convergência, dissipação e robustez.
-    'todos': inclui precisão temporal e aprofundamentos de robustez.
-    'aprofundamento': trajetórias/variacional e robustez do passo implícito.
+# ===========================================================================
+# INVESTIGAÇÃO 2.2: FAMÍLIA NÃO QUADRÁTICA ACOPLADA
+# ===========================================================================
+
+
+def _coupled_reference(problem, initial, horizon, method='Radau'):
+    """Solução numérica de referência, não solução analítica.
+
+    Mantemos a interpolação densa do integrador para avaliar todos os métodos
+    nos mesmos tempos, sem interpolar linearmente os iterados EF/EB.
     """
-    names = ('convergencia', 'dissipacao', 'robustez')
-    selected = (names if analise == 'principais' else
-                ('trajetorias','residuo') if analise == 'aprofundamento' else
-                names + ('precisao','trajetorias','residuo') if analise == 'todos' else
-                (analise,))
-    runs = {
-        'convergencia': lambda: experiment_convergence(
-            kappas=(10,) if piloto else (10, 100),
-            max_steps=4500 if piloto else 12000),
-        'dissipacao': lambda: experiment_dissipation(piloto=piloto),
-        'robustez': lambda: experiment_robustness(piloto=piloto),
-        'precisao': lambda: experiment_accuracy(piloto=piloto),
-        'trajetorias': lambda: experiment_trajectory_robustness(piloto=piloto),
-        'residuo': lambda: experiment_implicit_residual(piloto=piloto),
+    kwargs = dict(
+        fun=lambda t, x: -problem.gradient(x),
+        t_span=(0., float(horizon)), y0=np.asarray(initial, dtype=float),
+        method=method, rtol=1e-11, atol=1e-13, dense_output=True,
+    )
+    if method == 'Radau':
+        kwargs['jac'] = lambda t, x: -problem.hessian(x)
+    sol = solve_ivp(**kwargs)
+    if not sol.success or sol.sol is None:
+        raise RuntimeError(f'Falha na referência {method}: {sol.message}')
+    return sol
+
+
+def _coupled_reference_check(problem, initial, horizon, times):
+    """Compara dois integradores independentes para a mesma condição inicial."""
+    radau = _coupled_reference(problem, initial, horizon, 'Radau')
+    dop = _coupled_reference(problem, initial, horizon, 'DOP853')
+    discrepancy = np.linalg.norm(radau.sol(times)-dop.sol(times), axis=0)
+    maximum = float(np.max(discrepancy))
+    if not np.isfinite(maximum) or maximum > 1e-8:
+        raise RuntimeError(f'Referências Radau/DOP853 discordam: {maximum:.3e}')
+    return radau, maximum
+
+
+def _coupled_steps(problem, method, x0, h, n):
+    """Executa EF/EB sem parada antecipada, preservando t_k = kh."""
+    trial = _trajectory(problem, method, x0, h, n_steps=n)
+    if trial['X'] is None or trial['status'] != 'Fixed Steps':
+        raise RuntimeError(f'{method}: falha inesperada: {trial["falha"] or trial["status"]}')
+    if len(trial['X']) != n+1:
+        raise RuntimeError(f'{method}: trajetória com comprimento inesperado')
+    return trial['X'], trial['info']
+
+
+def _slow_angle_deg(H):
+    """Orientação do autovetor de menor autovalor, com sinal fixado em v[0]>0."""
+    _, eigvecs = np.linalg.eigh(H)
+    v = eigvecs[:, 0]
+    if v[0] < 0:
+        v = -v
+    return float(np.degrees(np.arctan2(v[1], v[0])))
+
+
+def experiment_coupled_trajectories(*, piloto=False, root=None):
+    """Varia o passo sem variar a função, x0 e o tempo final T=3.
+
+    Dois painéis por passo: em cada painel o fluxo (Radau) e EF/EB são
+    comparados geometricamente. Referência DOP853 confere Radau.
+    """
+    out = folders('exp2_nonquadratic', root=root)
+    problem = CoupledNonQuadratic(kappa=2., epsilon=.35)
+    x0 = np.array([1.2, .8])
+    T = 3.0
+    regimes = ((.15, 20), (.60, 5))
+    dense_time = np.linspace(0., T, 501)
+    ref, max_disagreement = _coupled_reference_check(problem, x0, T, dense_time)
+    ref_dense = ref.sol(dense_time).T
+
+    grid = np.linspace(-.5, 1.5, 320)
+    X, Y = np.meshgrid(grid, grid)
+    S = X+Y
+    Z = .5*(X**2 + problem.kappa*Y**2) + problem.epsilon*(np.sin(S)-S)
+    levels = np.geomspace(.008, 2.5, 13)
+    rows, summary, angles = [], [], []
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.9), sharex=True, sharey=True)
+    colors = {'EF':'#2166ad', 'EB':'#d27a1d'}
+    all_handles = None
+
+    for j, (ax, (h, n)) in enumerate(zip(axes, regimes)):
+        if not (0 < h < 2/problem.L and np.isclose(h*n, T)):
+            raise ValueError('Passos precisam respeitar a faixa estável e T fixo')
+        tk = h*np.arange(n+1)
+        reference_nodes = ref.sol(tk).T
+        ax.contour(X, Y, Z, levels=levels, colors='.74',
+                   linewidths=.75, alpha=.85, zorder=1)
+        continuous, = ax.plot(ref_dense[:,0], ref_dense[:,1],
+                              color='#242424', lw=2.0, label='Fluxo gradiente (referência)',
+                              zorder=3)
+        handles = [continuous]
+        for method, marker in (('EF', 'o'), ('EB', 's')):
+            traj, info = _coupled_steps(problem, method, x0, h, n)
+            line, = ax.plot(traj[:,0], traj[:,1], marker+'-',
+                            color=colors[method], lw=1.45, ms=4.3,
+                            label='Euler forward' if method=='EF' else 'Euler backward',
+                            zorder=4 if method=='EF' else 5)
+            handles.append(line)
+            error = np.linalg.norm(traj-reference_nodes,axis=1)
+            for k, (x, e) in enumerate(zip(traj, error)):
+                rows.append(dict(cenario=f'h={h:g}', metodo=method,
+                                 h=float(h), N=n, T=T, k=k, t=float(tk[k]),
+                                 x=float(x[0]), y=float(x[1]),
+                                 erro_ao_fluxo=float(e)))
+            summary.append(dict(cenario=f'h={h:g}', metodo=method,
+                                h=h, N=n, T=T, status=info['status'],
+                                erro_final=float(error[-1]),
+                                maior_erro_na_malha=float(error.max()),
+                                max_residuo_implicito=float(info['max_implicit_residual'])))
+        ini, = ax.plot(*x0, '*', color='black', ms=9, zorder=7,
+                       label='Condição inicial')
+        minimum, = ax.plot(0,0,'x',color='black',ms=8,mew=1.7,
+                           label='Minimizador',zorder=7)
+        handles.extend((ini,minimum))
+        if j == 0:
+            all_handles = handles
+        ax.set(title=rf'({chr(97+j)}) Passo $h={h:g}$, $N={n}$',
+               xlim=(-.5,1.5),ylim=(-.5,1.5))
+        ax.set_aspect('equal', adjustable='box')
+        ax.grid(alpha=.12)
+        ax.spines[['top','right']].set_visible(False)
+
+    for i,(tt, x) in enumerate(zip(dense_time,ref_dense)):
+        angle=_slow_angle_deg(problem.hessian(x))
+        angles.append(dict(t=float(tt), x=float(x[0]), y=float(x[1]),
+                           hess_misto=float(problem.hessian(x)[0,1]),
+                           angulo_modo_lento_graus=angle))
+
+    fig.suptitle('Função acoplada: trajetórias contínuas e discretas',
+                 fontsize=14, y=.965)
+    fig.text(.5,.907,rf'$\kappa={problem.kappa:g}$, '
+             rf'$\varepsilon={problem.epsilon:g}$, ' r'$x_0=(1{,}2;\ 0{,}8)$, '
+             rf'$T={T:g}$; ambos os passos satisfazem $h<2/L$',
+             ha='center',fontsize=10)
+    fig.supxlabel(r'Coordenada $x_1$',y=.142)
+    fig.supylabel(r'Coordenada $x_2$',x=.027)
+    fig.legend(all_handles,[h.get_label() for h in all_handles],
+               ncol=3,loc='lower center',bbox_to_anchor=(.5,.023),
+               frameon=False,fontsize=9)
+    fig.subplots_adjust(left=.095,right=.95,top=.805,bottom=.245,wspace=.19)
+    png(fig,out['figures']/'03_acoplada_trajetorias.png')
+
+    csv_write(out['tables']/'03_acoplada_trajetorias.csv',rows)
+    csv_write(out['tables']/'03_acoplada_resumo.csv',summary)
+    csv_write(out['tables']/'03_acoplada_hessiana_ao_longo_fluxo.csv',angles)
+    json_write(out['logs']/'03_acoplada_trajetorias_config.json',dict(
+        problema='CoupledNonQuadratic',kappa=problem.kappa,
+        epsilon=problem.epsilon,m=problem.m,L=problem.L,
+        x0=x0.tolist(),T=T,regimes=[{'h':h,'N':n} for h,n in regimes],
+        solvers_referencia=['Radau','DOP853'],rtol=1e-11,atol=1e-13,
+        max_discrepancia_referencias=max_disagreement,
+        angulo_inicial_graus=angles[0]['angulo_modo_lento_graus'],
+        angulo_final_graus=angles[-1]['angulo_modo_lento_graus'],
+        nota='Erros calculados nos mesmos instantes t_k; passos diferentes, mesmo T. '
+             'Referência contínua é numérica, não exata.'))
+    return summary
+
+
+def experiment_coupled_sensitivity(*, piloto=False, root=None):
+    """Duas condições iniciais + derivada cruzada do fluxo.
+
+    A quantidade D Phi_t(x0)[e1]_2 detecta efeito de x0,1 sobre x2(t).
+    Para o problema separável essa derivada cruzada é identicamente zero.
+    """
+    out = folders('exp2_nonquadratic', root=root)
+    problem = CoupledNonQuadratic(kappa=2., epsilon=.35)
+    a=np.array([1.2,.8])
+    delta=np.array([.08,-.06])
+    b=a+delta
+    e1=np.array([1.,0.])
+    eps_fd=1e-5
+    h=.30
+    n=10
+    T=n*h
+    t=h*np.arange(n+1)
+    t_dense=np.linspace(0,T,301)
+
+    sol_a, difference_a = _coupled_reference_check(problem,a,T,t_dense)
+    sol_b, difference_b = _coupled_reference_check(problem,b,T,t_dense)
+    sol_fd = _coupled_reference(problem,a+eps_fd*e1,T)
+    ref_a=sol_a.sol(t).T
+    ref_b=sol_b.sol(t).T
+    refs={'Fluxo':(ref_a,ref_b)}
+    residuals=[]
+    for method in ('EF','EB'):
+        Xa, info_a=_coupled_steps(problem,method,a,h,n)
+        Xb, info_b=_coupled_steps(problem,method,b,h,n)
+        refs[method]=(Xa,Xb)
+        residuals.append(float(max(info_a['max_implicit_residual'],
+                                   info_b['max_implicit_residual'])))
+
+    def variational_rhs(tt,z):
+        x=z[:2]
+        xi=z[2:]
+        return np.r_[-problem.gradient(x),-problem.hessian(x)@xi]
+
+    variational=solve_ivp(variational_rhs,(0.,T),np.r_[a,e1],
+                          method='Radau',dense_output=True,
+                          rtol=1e-11,atol=1e-13)
+    if not variational.success or variational.sol is None:
+        raise RuntimeError('Falha da equação variacional: '+variational.message)
+    xi=variational.sol(t_dense)[2:,:].T
+    fd=(sol_fd.sol(t_dense).T-sol_a.sol(t_dense).T)/eps_fd
+    discrepancy=np.linalg.norm(xi-fd,axis=1)
+    if np.max(discrepancy)>2e-4:
+        raise RuntimeError('Sensibilidade por equação variacional não confere com diferença finita')
+
+    k=np.arange(n+1)
+    qef=max(abs(1-h*problem.m),abs(1-h*problem.L))
+    qeb=1/(1+h*problem.m)
+    bounds={'Fluxo':np.linalg.norm(delta)*np.exp(-problem.m*t),
+            'EF':np.linalg.norm(delta)*qef**k,
+            'EB':np.linalg.norm(delta)*qeb**k}
+    colors={'Fluxo':'#222222','EF':'#2166ad','EB':'#d27a1d'}
+    rows=[]
+    for method,(Xa,Xb) in refs.items():
+        d=np.linalg.norm(Xa-Xb,axis=1)
+        if np.any(d>bounds[method]+5e-9):
+            raise AssertionError(f'Limite global de contração não confirmado: {method}')
+        for j in range(n+1):
+            rows.append(dict(metodo=method,k=int(j),t=float(t[j]),h=h,
+                             distancia_entre_trajetorias=float(d[j]),
+                             limite_teorico=float(bounds[method][j]),
+                             erro_ao_fluxo_a=(0. if method=='Fluxo' else
+                                float(np.linalg.norm(Xa[j]-ref_a[j])))))
+    crossing=[dict(t=float(tt), derivada_cruzada_variacional=float(x[1]),
+                   derivada_cruzada_diferenca_finita=float(y[1]),
+                   discrepancia=float(e))
+              for tt,x,y,e in zip(t_dense,xi,fd,discrepancy)]
+
+    fig,(ax1,ax2)=plt.subplots(1,2,figsize=(12.,4.9))
+    for method,(Xa,Xb) in refs.items():
+        ax1.semilogy(t,np.linalg.norm(Xa-Xb,axis=1),
+                     'o-' if method!='Fluxo' else '-',
+                     ms=4,lw=1.8,color=colors[method],label=method)
+    ax1.semilogy(t,bounds['Fluxo'],':',color='.43',lw=1.3,
+                 label=r'Limite contínuo $e^{-mt}\|a-b\|$')
+    ax1.set(xlabel=r'Tempo $t=kh$',
+            ylabel=r'$\|\Phi_t(a)-\Phi_t(b)\|$ (ou iterados)',
+            title='(a) Sensibilidade às condições iniciais')
+    ax1.grid(alpha=.20,which='both')
+    ax1.legend(fontsize=8.5)
+
+    ax2.plot(t_dense,xi[:,1],color='#673aa6',lw=1.9,
+             label=r'Equação variacional $\partial x_2(t)/\partial x_{0,1}$')
+    ax2.plot(t_dense[::15],fd[::15,1],'o',color='#be7127',ms=3.4,
+             label='Diferença finita do fluxo')
+    ax2.axhline(0.,color='.4',lw=1.2,ls=':',
+                label='Caso separável: derivada cruzada zero')
+    ax2.set(xlabel='Tempo $t$',ylabel='Sensibilidade cruzada',
+            title='(b) Acoplamento de perturbações')
+    ax2.grid(alpha=.20)
+    ax2.legend(fontsize=8.0)
+
+    fig.suptitle('Função acoplada: contração e influência entre coordenadas',
+                 fontsize=13.4,y=.99)
+    fig.subplots_adjust(left=.10,right=.97,bottom=.16,top=.84,wspace=.30)
+    png(fig,out['figures']/'04_acoplada_sensibilidade.png')
+    csv_write(out['tables']/'04_acoplada_contracao.csv',rows)
+    csv_write(out['tables']/'04_acoplada_derivada_cruzada.csv',crossing)
+    json_write(out['logs']/'04_acoplada_sensibilidade_config.json',dict(
+        problema='CoupledNonQuadratic',kappa=problem.kappa,
+        epsilon=problem.epsilon,m=problem.m,L=problem.L,
+        a=a.tolist(),b=b.tolist(),h=h,N=n,T=T,
+        direcao_diferenca_finita=e1.tolist(),eps_fd=eps_fd,
+        qef=qef,qeb=qeb,max_erro_variacional=float(np.max(discrepancy)),
+        max_sensibilidade_cruzada=float(np.max(np.abs(xi[:,1]))),
+        max_discrepancia_referencias=float(max(difference_a,difference_b)),
+        max_residuo_EB=float(max(residuals)),
+        solvers_referencia=['Radau','DOP853'],rtol=1e-11,atol=1e-13,
+        nota='Sensibilidade cruzada e contração são propriedades distintas; '
+             'curva contínua é referência numérica de alta precisão.'))
+    return rows
+
+
+def main(analise='principais', piloto=False):
+    """Duas investigações principais; diagnósticos antigos seguem opcionais.
+
+    principais: separável (convergência/dissipação); acoplada
+                (trajetórias/sensibilidade).
+    todos: inclui também robustez, precisão e diagnósticos anteriores.
+    """
+    essential=('convergencia','dissipacao','acoplada_trajetorias','acoplada_sensibilidade')
+    optional=('robustez','precisao','trajetorias','residuo')
+    selected = (essential if analise=='principais' else
+                ('acoplada_trajetorias','acoplada_sensibilidade') if analise=='acoplada' else
+                ('convergencia','dissipacao') if analise=='separavel' else
+                ('trajetorias','residuo') if analise=='aprofundamento' else
+                essential+optional if analise=='todos' else (analise,))
+    runs={
+        'convergencia':lambda:experiment_convergence(
+            kappas=(10,) if piloto else (10,100),
+            max_steps=4500 if piloto else 12000,
+            mostrar_limite_auxiliar=(analise in ('convergencia','todos'))),
+        'dissipacao':lambda:experiment_dissipation(piloto=piloto),
+        'acoplada_trajetorias':lambda:experiment_coupled_trajectories(piloto=piloto),
+        'acoplada_sensibilidade':lambda:experiment_coupled_sensitivity(piloto=piloto),
+        'robustez':lambda:experiment_robustness(piloto=piloto),
+        'precisao':lambda:experiment_accuracy(piloto=piloto),
+        'trajetorias':lambda:experiment_trajectory_robustness(piloto=piloto),
+        'residuo':lambda:experiment_implicit_residual(piloto=piloto),
     }
     for name in selected:
         result = runs[name]()
@@ -548,10 +831,13 @@ def main(analise='principais', piloto=False):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--analise', choices=('principais','todos','convergencia',
-                        'dissipacao','robustez','precisao',
-                        'aprofundamento','trajetorias','residuo'), default='principais')
-    parser.add_argument('--piloto', action='store_true')
-    args = parser.parse_args()
-    main(args.analise, args.piloto)
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--analise', choices=(
+        'principais','todos','separavel','acoplada',
+        'convergencia','dissipacao','acoplada_trajetorias',
+        'acoplada_sensibilidade','robustez','precisao',
+        'aprofundamento','trajetorias','residuo'),default='principais')
+    parser.add_argument('--piloto', action='store_true',
+                        help='reduz apenas os ensaios extensos da função separável')
+    args=parser.parse_args()
+    main(args.analise,args.piloto)
